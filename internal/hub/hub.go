@@ -2,6 +2,8 @@ package hub
 
 import (
 	"log/slog"
+	"os"
+	"time"
 
 	"github.com/lxzan/gws"
 )
@@ -29,6 +31,8 @@ type Hub struct {
 	broadcast  chan []byte
 	register   chan *gws.Conn
 	unregister chan *gws.Conn
+	quit       chan os.Signal
+	done       chan os.Signal
 }
 
 func NewHub() *Hub {
@@ -37,12 +41,19 @@ func NewHub() *Hub {
 		register:   make(chan *gws.Conn),
 		unregister: make(chan *gws.Conn),
 		clients:    make(map[*gws.Conn]*Client),
+		quit:       make(chan os.Signal),
+		done:       make(chan os.Signal),
 	}
 }
 
 func (h *Hub) Run() {
+	defer close(h.done)
 	for {
 		select {
+		case <-h.quit:
+			h.shutDownClients()
+			return
+
 		case conn := <-h.register:
 			client := NewClient(conn)
 			h.clients[conn] = client
@@ -74,6 +85,21 @@ func (h *Hub) Run() {
 			*/
 		}
 	}
+}
+
+func (hub *Hub) shutDownClients() {
+	for conn, client := range hub.clients {
+		_ = conn.SetDeadline(time.Now().Add(time.Second))
+		_ = conn.WriteClose(1001, []byte("Server shutting down!"))
+		close(client.send)
+		delete(hub.clients, conn)
+	}
+}
+
+// Stop sinaliza e ESPERA a limpeza terminar antes de retornar.
+func (h *Hub) Stop() {
+	close(h.quit)
+	<-h.done
 }
 
 func (hub *Hub) Unregister(conn *gws.Conn) {

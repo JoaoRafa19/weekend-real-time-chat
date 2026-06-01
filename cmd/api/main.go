@@ -1,8 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"weekend-real-time-chat/internal/handler"
 	"weekend-real-time-chat/internal/hub"
@@ -16,8 +23,12 @@ func main() {
 	// For later: add a text logger for dev and json logger for tracing
 	wrapper := utils.NewSlogWrapper(nil)
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	eventHub := hub.NewHub()
 	go eventHub.Run() // lida com as operações do EventHub
+
 	eventHandler := handler.NewHandler(wrapper, eventHub)
 
 	upgrader := gws.NewUpgrader(eventHandler, &gws.ServerOption{
@@ -56,12 +67,26 @@ func main() {
 
 	serv := http.Server{
 		Handler: handler,
-		Addr: ":8000",
+		Addr:    ":8000",
 	}
 
-	if err := serv.ListenAndServe(); err != nil {
-		wrapper.Error(err.Error())
-	}
+	go func() {
+		if err := serv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			wrapper.Error(err.Error())
+		}
+	}()
 
-	
+	log.Println("Servidor de pe em :8000")
+
+	<-ctx.Done() //lock
+
+	log.Println("encerrando...")
+
+	shutdownContext, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	_ = serv.Shutdown(shutdownContext)
+
+	eventHub.Stop()
+	log.Println("bye!")
 }
