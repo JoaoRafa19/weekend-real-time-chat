@@ -56,10 +56,12 @@ func main() {
 
 	serv := http.Server{
 		Handler: handler,
+		Addr: ":8000",
 	}
 
-	if err := http.ListenAndServe(":8000", serv.Handler); err != nil {
+	if err := serv.ListenAndServe(); err != nil {
 		wrapper.Error(err.Error())
 	}
 
+	
 }

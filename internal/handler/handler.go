@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"fmt"
+	"bytes"
 	"time"
 	"weekend-real-time-chat/internal/hub"
 
@@ -35,12 +35,13 @@ func (h *Handler) OnClose(socket *gws.Conn, err error) {
 
 // OnMessage implements [Event].
 func (h *Handler) OnMessage(socket *gws.Conn, message *gws.Message) {
+	//devolve o buffer para a pool para ser reaproveitado
+	defer message.Close()
+	// clona o em outro buffer para que o hub nao bloqueie o envio de novas mensagens
+	// enquanto esta lendo o buffer dessa mensagem
+	payload := bytes.Clone(message.Bytes())
 
-	msg := message.Data.String()
-
-	fmt.Println(msg)
-
-	h.eventHub.Broadcast(message.Bytes())
+	h.eventHub.Broadcast(payload)
 
 	socket.WriteString("message received")
 }
@@ -61,7 +62,7 @@ func (h *Handler) OnPing(socket *gws.Conn, payload []byte) {
 
 // OnPong implements [Event].
 func (h *Handler) OnPong(socket *gws.Conn, payload []byte) {
-	panic("unimplemented")
+
 }
 
 var _ Event = &Handler{}
